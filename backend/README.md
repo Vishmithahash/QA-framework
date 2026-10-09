@@ -6,6 +6,38 @@ Provides a FastAPI backend with environment configuration, Neon PostgreSQL conne
 
 ---
 
+## Architecture: Modular Monolith
+
+- The QA framework is structured as a **modular monolith** within a single FastAPI application and codebase.
+- Application configuration, Neon PostgreSQL database connections, SQLAlchemy base/session models, and Alembic migrations are shared across the system.
+- The four research components are organized as internal Python packages under `app/components/` and communicate via internal Python interfaces rather than separate services.
+- The reserved component packages currently contain only empty package markers and no runtime implementation.
+
+### Reserved Research Components
+
+The component packages under `app/components/` map to the research components as follows:
+
+| Package Folder | Research Component |
+|---|---|
+| `c1_tool_call_correctness` | **C1: Explainable Tool-Call Correctness Testing** |
+| `c2_state_aware_workflow` | **C2: State-Aware Multi-Step Workflow Testing** |
+| `c3_robustness_recovery` | **C3: Robustness and Failure Recovery Testing** |
+| `c4_policy_prompt_injection` | **C4: Policy-Aware Safety and Prompt-Injection Testing** |
+
+### Shared Integration Agreements (Design Note)
+
+The following integration agreements will be finalized prior to component implementation:
+
+- **Entity & Event Identifiers**: Future test and evidence records will share consistent `project_id`, `case_id`, `run_id`, and `event_id` fields. C3 will additionally include trial identifiers linking matched clean and fault trials.
+- **Run Metadata**: Each run will identify associated fixtures, agent/model configuration, component contracts, and evaluator versions.
+- **Status & Verdict Separation**: Readiness, execution status, exposure status, and component verdicts must remain strictly decoupled.
+- **Component Interoperability**: C2 owns workflow/state assertion definitions, while C3 consumes their `true`/`false`/`unknown` facts. Each component owns its generation and evaluation rules.
+- **Shared Infrastructure**: Execution orchestration, fixture reset mechanisms, and evidence transport will be designed once at the application level.
+- **Defect Correlation**: Related findings will reference shared events to prevent duplicate counting of the same root defect.
+- **Database Separation**: The QA framework's Neon database is strictly dedicated to framework state/evidence and isolated from any application-under-test (AUT) databases.
+
+---
+
 ## Getting Started
 
 Run all commands from the `backend/` directory.
