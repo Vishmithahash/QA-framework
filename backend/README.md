@@ -298,12 +298,58 @@ When a candidate case requests an undeclared capability combination (or violates
 }
 ```
 
-### Next Increment
+### Next Increment (Phase 2 & Beyond)
 
-The upcoming increment will integrate:
-1. One concrete NexaCart tool adapter (`charge_payment`).
-2. Fresh fixture initialization and verifiable reset mechanisms.
-3. Observed AUT database state inspection.
-4. Matched clean/fault control trials.
-5. A verified `BEFORE_EFFECT` timeout injection demonstration.
+Phase 2 builds the executable vertical slice: matched clean/fault trials, one-shot `BEFORE_EFFECT` timeout interception, fixture isolation/observation, and verified exposure receipts.
+
+---
+
+## Component 3 (C3): Robustness and Failure Recovery Testing (Phase 2)
+
+Phase 2 implements an executable vertical slice for matched clean/fault trial execution and verified `BEFORE_EFFECT` timeout fault exposure.
+
+### 1. Selected Tool and Target Integration Prerequisites
+- **Target Tool Identity**: `create_order` (side-effecting order placement operation in the NexaCart domain).
+- **Hermetic In-Memory Implementation**: `FakeNexaCartOrderToolAdapter` and `FakeNexaCartFixtureManager` allow full local demonstration and hermetic testing without live external dependencies.
+- **Live Integration Prerequisites (When connecting to real NexaCart)**:
+  - `NEXACART_BASE_URL`: HTTP base URL of the NexaCart NestJS application (e.g. `http://localhost:3000`).
+  - `NEXACART_DATABASE_URL`: Dedicated test PostgreSQL database URL for NexaCart (e.g. `postgresql://user:password@localhost:5433/nexacart_test`).
+  - *Status*: If these variables or services are absent, live execution is explicitly marked **BLOCKED** (`IntegrationBlockedError`), rather than misrepresenting fake test runs as live execution.
+
+### 2. Local Developer Runner
+
+Run the matched-pair execution runner from `backend/`:
+
+```powershell
+# Standard local runner (executes clean trial, resets fixture, executes fault trial, outputs evidence JSON)
+python -m app.components.c3_robustness_recovery.runner --output-dir ./evidence_output
+
+# Fast synthetic mode for quick developer checks
+python -m app.components.c3_robustness_recovery.runner --synthetic --output-dir ./evidence_output
+```
+
+### 3. Fixture Isolation, Reset, and Observation
+- **Scoped Namespace**: The fixture manager scopes state to a dedicated namespace (`fix-nexacart-orders`), resetting only orders created within that namespace rather than wiping an entire database.
+- **Independent Observation**: Directly queries the state store to record initial and final `FixtureSnapshot`s with deterministic fingerprints (`state_fingerprint`) and record counts.
+- **Clean Starting Verification**: Verifies that both the clean trial and fault trial begin with equivalent clean starting states (`record_count == 0`).
+
+### 4. Timeout Semantics and Exposure Criteria
+- **One-Shot BEFORE_EFFECT Episode**: Intercepts the configured tool call occurrence (e.g. occurrence 1) at the domain boundary before target forwarding.
+- **Target Prevention**: Strictly prevents forwarding to the target adapter, verifying that no side effects occur on the target before or during the fault.
+- **Boundary Hold**: Holds the response through the caller timeout boundary to deliver an authentic caller-observed timeout.
+- **One-Shot Consumption**: Subsequent calls pass through normally to the target; the C3 harness adds no automatic retries or recovery behavior.
+- **Exposure Classification**:
+  - `CONFIRMED`: Correlated receipts prove the hook was reached, target forwarding was prevented before effects, and the caller experienced the intended timeout.
+  - `NOT_TRIGGERED`: The target call occurrence was never reached during the trial.
+  - `EXPOSURE_UNKNOWN`: Clean control failed (limiting fault interpretation) or receipts were missing/contradictory.
+
+### 5. Reported Statuses and Decoupled Verdicts
+- **Execution Status**: `COMPLETED`, `TIMED_OUT`, `CANCELLED`, `EXECUTION_ERROR`.
+- **Clean Qualification**: `true` or `false` (failed clean controls are retained and never rerun until pass).
+- **Exposure Status**: `CONFIRMED`, `NOT_TRIGGERED`, `EXPOSURE_UNKNOWN`.
+- **Recovery Verdict**: Strictly `null` (`None`). Phase 2 observes exposure and state; recovery scoring is deferred to later phases.
+
+### 6. Known Limitations & Future Integration
+- Phase 2 tests only `BEFORE_EFFECT` timeouts on a single domain tool.
+- Automatic case generation, C2 workflow assertions, and shared database persistence remain deferred.
 

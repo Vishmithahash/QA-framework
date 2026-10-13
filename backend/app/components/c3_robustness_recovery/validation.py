@@ -315,12 +315,20 @@ def validate_candidate_case(request: CaseValidationRequest) -> CaseValidationRes
 
     # 3. Specific rules for PARTIAL_EFFECT and AFTER_COMMIT
     if case.effect_phase == EffectPhase.PARTIAL_EFFECT:
-        if case.fault_family == FaultFamily.TIMEOUT_OR_DISCONNECTION:
+        if case.trigger.hook not in APPLICATION_AWARE_HOOKS:
             reasons.append(
                 ValidationReason(
-                    code="TIMEOUT_CANNOT_ASSUME_PARTIAL_EFFECT",
-                    message="PARTIAL_EFFECT must never be assumed from a timeout or disconnection.",
-                    field_path="case.effect_phase",
+                    code="PARTIAL_EFFECT_REQUIRES_APPLICATION_AWARE_HOOK",
+                    message="PARTIAL_EFFECT requires an application-aware hook, not a generic transport/network hook.",
+                    field_path="case.trigger.hook",
+                )
+            )
+        if not env.fixture.has_partial_effect_observation:
+            reasons.append(
+                ValidationReason(
+                    code="PARTIAL_EFFECT_MISSING_OBSERVATION",
+                    message="PARTIAL_EFFECT requires fixture metadata declaring observable partial effects.",
+                    field_path="environment_metadata.fixture.has_partial_effect_observation",
                 )
             )
 
@@ -354,6 +362,11 @@ def validate_candidate_case(request: CaseValidationRequest) -> CaseValidationRes
             and c.effect_phase == case.effect_phase
             and c.hook == case.trigger.hook
             and case.release_rule.mode in c.supported_release_modes
+            and (c.tool_id is None or c.tool_id == case.tool_id)
+            and (
+                c.max_call_occurrence is None
+                or case.trigger.call_occurrence <= c.max_call_occurrence
+            )
         ),
         None,
     )
@@ -563,12 +576,35 @@ def validate_candidate_case(request: CaseValidationRequest) -> CaseValidationRes
 
     if isinstance(case.payload, TimeoutPayload):
         delay_sec = case.payload.delay_ms / 1000.0
-        if delay_sec >= contract.timeout_budget_seconds:
+        if case.caller_timeout_seconds is not None:
+            if case.caller_timeout_seconds >= contract.timeout_budget_seconds:
+                reasons.append(
+                    ValidationReason(
+                        code="CALLER_TIMEOUT_EXCEEDS_BUDGET",
+                        message="Caller timeout boundary is greater than or equal to recovery timeout budget.",
+                        field_path="case.caller_timeout_seconds",
+                    )
+                )
+        else:
+            if delay_sec >= contract.timeout_budget_seconds:
+                reasons.append(
+                    ValidationReason(
+                        code="FAULT_DELAY_EXCEEDS_TIMEOUT_BUDGET",
+                        message="Fault injection delay is greater than or equal to recovery timeout budget.",
+                        field_path="case.payload.delay_ms",
+                    )
+                )
+
+    if (
+        case.release_rule.mode == ReleaseRuleMode.TIME_BASED
+        and case.release_rule.duration_seconds is not None
+    ):
+        if case.release_rule.duration_seconds > contract.timeout_budget_seconds:
             reasons.append(
                 ValidationReason(
-                    code="FAULT_DELAY_EXCEEDS_TIMEOUT_BUDGET",
-                    message="Fault injection delay is greater than or equal to recovery timeout budget.",
-                    field_path="case.payload.delay_ms",
+                    code="RELEASE_RULE_EXCEEDS_TIMEOUT_BUDGET",
+                    message="Fault release rule duration exceeds recovery timeout budget.",
+                    field_path="case.release_rule.duration_seconds",
                 )
             )
 

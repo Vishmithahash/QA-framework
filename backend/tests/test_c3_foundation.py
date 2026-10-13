@@ -384,7 +384,7 @@ def test_read_only_tool_cannot_declare_after_commit_or_partial_effect():
 
 
 def test_timeout_cannot_assume_partial_effect():
-    """PARTIAL_EFFECT must never be assumed from a timeout."""
+    """PARTIAL_EFFECT must never be assumed from an unverified transport timeout."""
     req = build_valid_test_request()
     req_dict = json.loads(req.model_dump_json())
     req_dict["case"]["effect_phase"] = "PARTIAL_EFFECT"
@@ -393,7 +393,14 @@ def test_timeout_cannot_assume_partial_effect():
     resp = validate_candidate_case(mutated_req)
 
     assert resp.validation_status == ValidationStatus.TEST_NOT_READY
-    assert any(r.code == "TIMEOUT_CANNOT_ASSUME_PARTIAL_EFFECT" for r in resp.reasons)
+    assert any(
+        r.code
+        in (
+            "PARTIAL_EFFECT_REQUIRES_APPLICATION_AWARE_HOOK",
+            "CAPABILITY_COMBINATION_NOT_DECLARED",
+        )
+        for r in resp.reasons
+    )
 
 
 def test_after_commit_requires_application_aware_hook_and_commit_observation():

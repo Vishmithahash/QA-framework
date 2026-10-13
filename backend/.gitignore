@@ -19,3 +19,6 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
+
+# Local evidence artifacts
+evidence_output/

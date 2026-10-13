@@ -326,6 +326,19 @@ class AdapterCapability(StrictBaseModel):
     effect_phase: EffectPhase
     hook: HookType
     observation_method: str = Field(..., min_length=1, max_length=128)
+    tool_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        description="Optional tool identifier scoping this capability.",
+    )
+    max_call_occurrence: int | None = Field(
+        default=None,
+        strict=True,
+        ge=1,
+        le=100,
+        description="Maximum supported call occurrence count for trigger interception.",
+    )
     allowed_modes: list[str] | None = None
     min_delay_ms: int | None = Field(default=None, strict=True, ge=1)
     max_delay_ms: int | None = Field(default=None, strict=True, ge=1)
@@ -362,7 +375,7 @@ class AdapterCapabilityManifest(StrictBaseModel):
             raise ValueError("Duplicate tool declarations in adapter manifest.")
 
         cap_keys = [
-            (c.fault_family, c.effect_phase, c.hook, c.observation_method)
+            (c.tool_id, c.fault_family, c.effect_phase, c.hook, c.observation_method)
             for c in self.capabilities
         ]
         if len(cap_keys) != len(set(cap_keys)):
@@ -418,6 +431,12 @@ class CandidateFaultCase(StrictBaseModel):
     release_rule: ReleaseRule
     required_assertion_ids: list[str] = Field(..., min_length=1)
     seed: int | None = Field(default=None, strict=True, ge=0, le=2147483647)
+    caller_timeout_seconds: float | None = Field(
+        default=None,
+        gt=0.0,
+        le=3600.0,
+        description="Caller's expected timeout boundary for tool invocations.",
+    )
 
     @model_validator(mode="after")
     def validate_case_consistency(self) -> Self:
@@ -537,6 +556,11 @@ class FixtureMetadata(StrictBaseModel):
         default=False,
         strict=True,
         description="Declares whether fixture provides observation access to verify committed side effects.",
+    )
+    has_partial_effect_observation: bool = Field(
+        default=False,
+        strict=True,
+        description="Declares whether fixture supports observation of partial side effects.",
     )
 
 
