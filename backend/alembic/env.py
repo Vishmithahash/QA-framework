@@ -3,6 +3,9 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import create_engine, pool
 
+from app.components.c2_state_aware_workflow.models import (  # noqa: F401
+    C2WorkflowModel,
+)
 from app.config import get_settings
 from app.database import Base, normalize_database_url
 
