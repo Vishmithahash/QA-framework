@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Production build output
+dist/
+
+# Test coverage
+coverage/
+
+# Local environment files (preserve .env.example)
+.env
+.env.local
+.env.*.local
+
+# Cache and temporary files
+.eslintcache
+.turbo/
+*.tsbuildinfo
+.vite/
