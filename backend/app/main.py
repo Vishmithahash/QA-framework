@@ -22,6 +22,9 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.include_router(health_router)
+    from app.components.c4_policy_aware_safety.api.routes import router as c4_router
+
+    app.include_router(c4_router)
     return app
 
 
