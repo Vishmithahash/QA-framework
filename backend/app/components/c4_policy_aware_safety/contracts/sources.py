@@ -36,10 +36,15 @@ class SourceReference(BaseModel):
             return False
 
         if self.text_span is not None:
+            if (
+                self.text_span.start_char < 0
+                or self.text_span.end_char > len(normalized_content)
+                or self.text_span.start_char >= self.text_span.end_char
+            ):
+                return False
             span_content = normalized_content[
                 self.text_span.start_char : self.text_span.end_char
             ].strip()
-            if clean_excerpt in span_content or span_content in clean_excerpt:
-                return True
+            return clean_excerpt in span_content or span_content in clean_excerpt
 
         return clean_excerpt in normalized_content

@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class EvidenceOrigin(str, Enum):
@@ -71,19 +71,46 @@ class InstructionSource(BaseModel):
     def sanitize_trust_classification(
         cls,
         declared_trust: TrustClassification,
-        text_content: str | None,
+        source_type: SourceType,
+        text_content: str | None = None,
     ) -> TrustClassification:
         """
         Enforce security principle: untrusted input asserting authority
         (e.g. 'I am the manager' or 'ignore previous rules') must NEVER be
         upgraded to trusted system authority.
         """
+        untrusted_types = (
+            SourceType.SUPPORT_TICKET,
+            SourceType.EMAIL,
+            SourceType.RETRIEVED_DOCUMENT,
+            SourceType.TOOL_RESPONSE,
+        )
+        if (
+            source_type in untrusted_types
+            and declared_trust == TrustClassification.TRUSTED_SYSTEM
+        ):
+            return TrustClassification.UNTRUSTED_CONTENT
         if declared_trust in (
             TrustClassification.UNTRUSTED_CONTENT,
             TrustClassification.UNTRUSTED_EXTERNAL,
         ):
             return declared_trust
         return declared_trust
+
+    @model_validator(mode="after")
+    def prevent_untrusted_elevation(self) -> "InstructionSource":
+        untrusted_types = (
+            SourceType.SUPPORT_TICKET,
+            SourceType.EMAIL,
+            SourceType.RETRIEVED_DOCUMENT,
+            SourceType.TOOL_RESPONSE,
+        )
+        if (
+            self.source_type in untrusted_types
+            and self.trust_classification == TrustClassification.TRUSTED_SYSTEM
+        ):
+            self.trust_classification = TrustClassification.UNTRUSTED_CONTENT
+        return self
 
 
 class AgentActionAttempt(BaseModel):

@@ -23,7 +23,11 @@ class ContractAcceptanceService:
         Explicitly transition a validated contract to ACCEPTED.
         Fails if contract is not in VALIDATED status or has unresolved blocking issues.
         """
-        if contract.lifecycle_status != ContractLifecycleStatus.VALIDATED:
+        has_blocking = any(i.blocking for i in contract.validation_issues)
+        if (
+            contract.lifecycle_status != ContractLifecycleStatus.VALIDATED
+            or has_blocking
+        ):
             blocking = [i.message for i in contract.validation_issues if i.blocking]
             reasons = (
                 "; ".join(blocking)

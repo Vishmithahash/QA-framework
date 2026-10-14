@@ -36,13 +36,30 @@ class PolicyContractValidator:
         key = (artifact.project_id, artifact.artifact_id, artifact.version)
         self.artifacts[key] = artifact
 
+    ALLOWED_EVIDENCE_ROOTS = {
+        "principal",
+        "action",
+        "arguments",
+        "amount",
+        "approval",
+        "disclosures",
+        "disclosure",
+        "observable_effects",
+        "effect",
+        "effects",
+        "decision",
+        "authorization_decisions",
+        "attack_exposure",
+        "trace_completeness",
+    }
+
     def validate_predicate(
         self,
         pred: DeclarativePredicate | None,
         rule_id: str,
         path: str = "applicability",
     ) -> list[CandidateValidationIssue]:
-        """Validate that predicate uses allowlisted fields and valid operators."""
+        """Validate that predicate uses allowlisted fields, valid operators, and supported operand types."""
         if pred is None:
             return []
 
@@ -57,8 +74,24 @@ class PolicyContractValidator:
                         message=f"Disallowed field path '{pred.field}' in {path}.",
                         rule_id=rule_id,
                         field=f"{path}.field",
+                        blocking=True,
                     )
                 )
+            else:
+                root_field = pred.field.split(".")[0]
+                if root_field not in self.ALLOWED_EVIDENCE_ROOTS:
+                    issues.append(
+                        CandidateValidationIssue(
+                            code=IssueCode.UNSUPPORTED,
+                            message=(
+                                f"Unknown or unavailable evidence-field reference '{pred.field}' in {path}. "
+                                f"Field root must be one of {sorted(self.ALLOWED_EVIDENCE_ROOTS)}."
+                            ),
+                            rule_id=rule_id,
+                            field=f"{path}.field",
+                            blocking=True,
+                        )
+                    )
 
             # Ensure operator is allowlisted
             if not isinstance(pred.operator, PredicateOperator):
@@ -68,8 +101,44 @@ class PolicyContractValidator:
                         message=f"Invalid operator '{pred.operator}' in {path}.",
                         rule_id=rule_id,
                         field=f"{path}.operator",
+                        blocking=True,
                     )
                 )
+            else:
+                # Validate operand types
+                if pred.operator in (
+                    PredicateOperator.LT,
+                    PredicateOperator.LTE,
+                    PredicateOperator.GT,
+                    PredicateOperator.GTE,
+                ):
+                    if pred.value is None or isinstance(pred.value, (bool, dict, list)):
+                        issues.append(
+                            CandidateValidationIssue(
+                                code=IssueCode.UNSUPPORTED,
+                                message=(
+                                    f"Ordered comparison operator '{pred.operator}' requires a numeric operand, "
+                                    f"got {type(pred.value).__name__} in {path}."
+                                ),
+                                rule_id=rule_id,
+                                field=f"{path}.value",
+                                blocking=True,
+                            )
+                        )
+                elif pred.operator in (PredicateOperator.IN, PredicateOperator.NOT_IN):
+                    if not isinstance(pred.value, (list, tuple, set, str)):
+                        issues.append(
+                            CandidateValidationIssue(
+                                code=IssueCode.UNSUPPORTED,
+                                message=(
+                                    f"Membership operator '{pred.operator}' requires a collection or string operand, "
+                                    f"got {type(pred.value).__name__} in {path}."
+                                ),
+                                rule_id=rule_id,
+                                field=f"{path}.value",
+                                blocking=True,
+                            )
+                        )
 
         elif isinstance(pred, CompoundPredicate):
             if pred.operator not in (
@@ -83,6 +152,7 @@ class PolicyContractValidator:
                         message=f"Compound operator must be 'all', 'any', or 'not', got '{pred.operator}'.",
                         rule_id=rule_id,
                         field=f"{path}.operator",
+                        blocking=True,
                     )
                 )
             if not pred.predicates:
@@ -92,6 +162,7 @@ class PolicyContractValidator:
                         message=f"Compound predicate '{pred.operator}' has no child predicates.",
                         rule_id=rule_id,
                         field=f"{path}.predicates",
+                        blocking=True,
                     )
                 )
             for idx, child in enumerate(pred.predicates):
@@ -121,7 +192,7 @@ class PolicyContractValidator:
             )
             return issues
 
-        # 2. Source references must exist in the SAME project and version, with matching excerpt
+        # 2. Source references must exist in the SAME project and version, with matching excerpt and bounds
         for idx, src in enumerate(rule.sources):
             key = (project_id, src.artifact_id, src.artifact_version)
             artifact = self.artifacts.get(key)
@@ -140,19 +211,55 @@ class PolicyContractValidator:
                 )
                 continue
 
-            # Verify excerpt agreement
-            if not src.matches_content(artifact.normalized_content):
-                issues.append(
-                    CandidateValidationIssue(
-                        code=IssueCode.INVALID_REFERENCE,
-                        message=(
-                            f"Excerpt in rule '{rule.rule_id}' does not match content in "
-                            f"artifact '{src.artifact_id}' (version {src.artifact_version})."
-                        ),
-                        rule_id=rule.rule_id,
-                        field=f"sources[{idx}].supporting_excerpt",
+            # Verify text span bounds and excerpt agreement
+            if src.text_span is not None:
+                if (
+                    src.text_span.start_char < 0
+                    or src.text_span.end_char > len(artifact.normalized_content)
+                    or src.text_span.start_char >= src.text_span.end_char
+                ):
+                    issues.append(
+                        CandidateValidationIssue(
+                            code=IssueCode.INVALID_REFERENCE,
+                            message=(
+                                f"Text span [{src.text_span.start_char}:{src.text_span.end_char}] in rule '{rule.rule_id}' "
+                                f"is out of bounds for artifact '{src.artifact_id}' (length {len(artifact.normalized_content)})."
+                            ),
+                            rule_id=rule.rule_id,
+                            field=f"sources[{idx}].text_span",
+                        )
                     )
-                )
+                    continue
+
+                span_text = artifact.normalized_content[
+                    src.text_span.start_char : src.text_span.end_char
+                ].strip()
+                clean_excerpt = src.supporting_excerpt.strip()
+                if not (clean_excerpt in span_text or span_text in clean_excerpt):
+                    issues.append(
+                        CandidateValidationIssue(
+                            code=IssueCode.INVALID_REFERENCE,
+                            message=(
+                                f"Excerpt in rule '{rule.rule_id}' does not match content within declared "
+                                f"text span [{src.text_span.start_char}:{src.text_span.end_char}] in artifact '{src.artifact_id}'."
+                            ),
+                            rule_id=rule.rule_id,
+                            field=f"sources[{idx}].supporting_excerpt",
+                        )
+                    )
+            else:
+                if not src.matches_content(artifact.normalized_content):
+                    issues.append(
+                        CandidateValidationIssue(
+                            code=IssueCode.INVALID_REFERENCE,
+                            message=(
+                                f"Excerpt in rule '{rule.rule_id}' does not match content in "
+                                f"artifact '{src.artifact_id}' (version {src.artifact_version})."
+                            ),
+                            rule_id=rule.rule_id,
+                            field=f"sources[{idx}].supporting_excerpt",
+                        )
+                    )
 
         # 3. Predicate validation
         issues.extend(

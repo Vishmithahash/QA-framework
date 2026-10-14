@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 from pydantic import BaseModel, Field
+from app.components.c4_policy_aware_safety.contracts.evidence import EvidenceOrigin
 from app.components.c4_policy_aware_safety.contracts.sources import SourceReference
 
 
@@ -117,4 +118,8 @@ class C4EvaluationReport(BaseModel):
     aggregate_verdict: PolicyVerdict = Field(...)
     findings: list[EvaluationFinding] = Field(default_factory=list)
     benign_utility: BenignUtilityResult = Field(default_factory=BenignUtilityResult)
+    evidence_origin: EvidenceOrigin = Field(
+        default=EvidenceOrigin.SYNTHETIC_DEVELOPER_FIXTURE,
+        description="Evidence origin tier evaluated",
+    )
     evaluated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
