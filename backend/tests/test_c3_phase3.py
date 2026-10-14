@@ -40,7 +40,7 @@ from app.config import get_settings  # noqa: E402
 
 get_settings.cache_clear()
 
-from app.components.c3_robustness_recovery.adapter import (  # noqa: E402
+from app.components.c3_robustness_recovery.runtime.adapter import (  # noqa: E402
     FakeNexaCartFixtureManager,
     FakeNexaCartOrderToolAdapter,
     IntegrationBlockedError,
@@ -48,7 +48,7 @@ from app.components.c3_robustness_recovery.adapter import (  # noqa: E402
     NexaCartPrismaFixtureManager,
     ToolAdapter,
 )
-from app.components.c3_robustness_recovery.evidence import (  # noqa: E402
+from app.components.c3_robustness_recovery.runtime.evidence import (  # noqa: E402
     CallInterceptionReceipt,
     CallerIdentity,
     CallerOutcome,
@@ -63,15 +63,15 @@ from app.components.c3_robustness_recovery.evidence import (  # noqa: E402
     TrialRole,
     validate_evidence_linkage,
 )
-from app.components.c3_robustness_recovery.interceptor import (  # noqa: E402
+from app.components.c3_robustness_recovery.runtime.interceptor import (  # noqa: E402
     OneShotTimeoutInterceptor,
 )
-from app.components.c3_robustness_recovery.runner import (  # noqa: E402
+from app.components.c3_robustness_recovery.runtime.runner import (  # noqa: E402
     build_default_phase2_request,
     run_matched_pair,
     UnsupportedExecutionConfigurationError,
 )
-from app.components.c3_robustness_recovery.schemas import (  # noqa: E402
+from app.components.c3_robustness_recovery.contracts.schemas import (  # noqa: E402
     FaultFamily,
     HookType,
 )

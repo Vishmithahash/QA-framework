@@ -308,7 +308,33 @@ Phase 2 builds the executable vertical slice: matched clean/fault trials, one-sh
 
 Phase 3 hardens the paired-trial runtime, decouples fault exposure from clean qualification, adds strict per-tool occurrence counting and thread-safe atomic consumption, introduces scoped fixture partitioning and post-trial settling observation, verifies genuine transport socket timeouts, and truthful reporting of live prerequisites.
 
-### 1. Actual Supported Runtime Capability
+### 1. Internal Package Organization
+
+The Component 3 codebase is organized into clear internal packages by responsibility:
+
+```text
+app/components/c3_robustness_recovery/
+    __init__.py
+    contracts/
+        __init__.py
+        schemas.py          # Pure Pydantic v2 data, trigger, capability, and validation schemas
+    services/
+        __init__.py
+        validation.py       # Pure deterministic static capability and candidate case validator
+    runtime/
+        __init__.py
+        adapter.py          # ToolAdapter, FixtureManager, in-memory double, and live blocked skeletons
+        evidence.py         # Runtime evidence contracts, linkage validation, and artifact export
+        interceptor.py      # Thread-safe OneShotTimeoutInterceptor gateway
+        runner.py           # Matched-pair runner and developer CLI
+    api/
+        __init__.py
+        router.py           # FastAPI APIRouter exposing C3 HTTP endpoints
+```
+
+All C3 references across the repository import directly from these canonical paths. The CLI runner is executed via `python -m app.components.c3_robustness_recovery.runtime.runner`.
+
+### 2. Actual Supported Runtime Capability
 - **Targeted Fault Family**: `TIMEOUT_OR_DISCONNECTION` exclusively.
 - **Effect Phase**: `BEFORE_EFFECT` exclusively.
 - **Release Rule**: Single-call one-shot release (`SINGLE_CALL` or `COUNT_BASED` with `max_fault_occurrences=1`).
@@ -316,7 +342,7 @@ Phase 3 hardens the paired-trial runtime, decouples fault exposure from clean qu
 - **Target Tool**: `create_order` (side-effecting domain tool).
 - **Runtime Validation**: Rejects unsupported execution configurations (e.g. non-timeout families or `AFTER_COMMIT` phases) before execution rather than silently misbehaving.
 
-### 2. Demonstration vs. Live Modes
+### 3. Demonstration vs. Live Modes
 - **Demonstration Mode (`TargetMode.FAKE_ADAPTER`, `CallerIdentity.SCRIPTED_CALLER`)**:
   - Uses `FakeNexaCartOrderToolAdapter` and `FakeNexaCartFixtureManager`.
   - Operates hermetically without external network or database dependencies.
@@ -329,7 +355,7 @@ Phase 3 hardens the paired-trial runtime, decouples fault exposure from clean qu
   - Requires domain tool routing through the C3 interceptor while leaving LLM-provider calls untouched.
   - **Status: BLOCKED**. No agent invocation protocol or tested agent implementation currently exists in the repository.
 
-### 3. Prerequisites for Unblocking Live Execution
+### 4. Prerequisites for Unblocking Live Execution
 To unblock live integration without mock or fake fallbacks, the following prerequisites must be provisioned:
 1. **Target OpenAPI/Tool Contract**: Authoritative endpoint definitions for `create_order` (request/response schemas, idempotency keys, error models).
 2. **Dedicated Test Database**: `NEXACART_DATABASE_URL` pointing to an isolated test database (e.g. `postgresql://user:pass@localhost:5433/nexacart_test`). Must **never** point to the QA framework Neon database.
@@ -343,22 +369,22 @@ NEXACART_BASE_URL="http://localhost:3000"
 NEXACART_DATABASE_URL="postgresql://nexacart_tester:secret@localhost:5433/nexacart_test?sslmode=require"
 ```
 
-### 4. Running the Hardened Developer CLI
+### 5. Running the Hardened Developer CLI
 
 Run commands from the `backend/` directory using the existing virtual environment:
 
 ```powershell
 # Standard local paired-trial runner (demonstration mode)
-.\.venv\Scripts\python.exe -m app.components.c3_robustness_recovery.runner --output-dir ./evidence_output
+.\.venv\Scripts\python.exe -m app.components.c3_robustness_recovery.runtime.runner --output-dir ./evidence_output
 
 # Fast synthetic timeout mode
-.\.venv\Scripts\python.exe -m app.components.c3_robustness_recovery.runner --synthetic --output-dir ./evidence_output
+.\.venv\Scripts\python.exe -m app.components.c3_robustness_recovery.runtime.runner --synthetic --output-dir ./evidence_output
 
 # Live AUT mode (will cleanly report BLOCKED with exact missing prerequisites)
-.\.venv\Scripts\python.exe -m app.components.c3_robustness_recovery.runner --live
+.\.venv\Scripts\python.exe -m app.components.c3_robustness_recovery.runtime.runner --live
 ```
 
-### 5. Exposure vs. Clean-Qualification Separation
+### 6. Exposure vs. Clean-Qualification Separation
 - **Exposure Status (`CONFIRMED`, `NOT_TRIGGERED`, `EXPOSURE_UNKNOWN`)**:
   - Evaluated strictly from correlated fault trial receipts (`fault_injected=True`, `forwarded_to_target=False`, `caller_outcome=TIMEOUT`).
   - **Defect Fixed**: A failed clean control alone no longer forces `EXPOSURE_UNKNOWN`. Confirmed exposure coexists with failed clean qualification.
@@ -369,12 +395,12 @@ Run commands from the `backend/` directory using the existing virtual environmen
   - If clean qualification fails, the limitation is documented in `interpretation_limitations` while exposure remains truthfully `CONFIRMED`.
 - **Recovery Verdict**: Strictly `null` (`None`) throughout Phase 3 (recovery evaluation is deferred).
 
-### 6. Fixture Isolation, Reset, and Settling Limitations
+### 7. Fixture Isolation, Reset, and Settling Limitations
 - **Partitioned Namespaces**: Each trial uses an isolated partition namespace (`fixture_id_pair_id_clean` vs `fixture_id_pair_id_fault`), ensuring scoped resets never touch unrelated records.
 - **Equivalence Verification**: Verifies identical initial logical state (record count, total amount, and state fingerprint) prior to injection.
 - **Post-Trial Settling**: Observes the fixture after trial completion for a bounded settling period. If late in-flight mutations appear, `cleanup_status` is marked `CLEANUP_UNCERTAIN` and the fixture is marked unavailable for reuse (`fixture_reusable=False`).
 
-### 7. Automated Test and Quality Suite
+### 8. Automated Test and Quality Suite
 
 ```powershell
 # Run all tests (Foundation, Phase 2, and Phase 3 verification)
@@ -390,7 +416,7 @@ Run commands from the `backend/` directory using the existing virtual environmen
 .\.venv\Scripts\python.exe -m pip check
 ```
 
-### 8. Remaining C3 Backend Roadmap (Out of Scope for Phase 3)
+### 9. Remaining C3 Backend Roadmap (Out of Scope for Phase 3)
 - Automatic candidate fault case generation.
 - Remaining fault families (`TRANSIENT_5XX_SERVER_ERROR`, `HTTP_429_RATE_LIMITING`, `TOOL_UNAVAILABILITY`, `MALFORMED_OR_TRUNCATED_RESPONSE`).
 - `AFTER_COMMIT` post-commit fault injection and observation.

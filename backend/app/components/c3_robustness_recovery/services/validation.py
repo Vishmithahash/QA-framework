@@ -9,7 +9,7 @@ Pure deterministic logic:
 - No credential or raw input interpolation in messages.
 """
 
-from app.components.c3_robustness_recovery.schemas import (
+from app.components.c3_robustness_recovery.contracts.schemas import (
     APPLICATION_AWARE_HOOKS,
     CaseValidationRequest,
     CaseValidationResponse,

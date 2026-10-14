@@ -26,7 +26,7 @@ from app.config import get_settings  # noqa: E402
 
 get_settings.cache_clear()
 
-from app.components.c3_robustness_recovery.schemas import (  # noqa: E402
+from app.components.c3_robustness_recovery.contracts.schemas import (  # noqa: E402
     AdapterCapability,
     AdapterCapabilityManifest,
     AssertionMetadata,
@@ -53,7 +53,7 @@ from app.components.c3_robustness_recovery.schemas import (  # noqa: E402
     ValidationScope,
     ValidationStatus,
 )
-from app.components.c3_robustness_recovery.validation import (  # noqa: E402
+from app.components.c3_robustness_recovery.services.validation import (  # noqa: E402
     get_operational_fault_catalog,
     validate_candidate_case,
 )

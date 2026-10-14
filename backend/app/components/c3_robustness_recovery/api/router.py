@@ -8,12 +8,12 @@ Endpoints:
 """
 
 from fastapi import APIRouter, status
-from app.components.c3_robustness_recovery.schemas import (
+from app.components.c3_robustness_recovery.contracts.schemas import (
     CaseValidationRequest,
     CaseValidationResponse,
     FaultCatalogResponse,
 )
-from app.components.c3_robustness_recovery.validation import (
+from app.components.c3_robustness_recovery.services.validation import (
     get_operational_fault_catalog,
     validate_candidate_case,
 )

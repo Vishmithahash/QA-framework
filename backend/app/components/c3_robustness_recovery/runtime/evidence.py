@@ -20,7 +20,7 @@ import json
 from pathlib import Path
 from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
-from app.components.c3_robustness_recovery.schemas import HookType
+from app.components.c3_robustness_recovery.contracts.schemas import HookType
 
 
 class TrialRole(str, Enum):

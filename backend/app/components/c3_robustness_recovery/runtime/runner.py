@@ -23,7 +23,18 @@ from pathlib import Path
 import time
 from typing import Any
 from uuid import uuid4
-from app.components.c3_robustness_recovery.adapter import (
+from app.components.c3_robustness_recovery.contracts.schemas import (
+    CandidateFaultCase,
+    CaseValidationRequest,
+    EffectPhase,
+    FaultFamily,
+    HookType,
+    RecoveryContract,
+    ReleaseRuleMode,
+    TimeoutMode,
+    TimeoutPayload,
+)
+from app.components.c3_robustness_recovery.runtime.adapter import (
     FakeNexaCartFixtureManager,
     FakeNexaCartOrderToolAdapter,
     FixtureManager,
@@ -32,7 +43,7 @@ from app.components.c3_robustness_recovery.adapter import (
     NexaCartPrismaFixtureManager,
     ToolAdapter,
 )
-from app.components.c3_robustness_recovery.evidence import (
+from app.components.c3_robustness_recovery.runtime.evidence import (
     CallerIdentity,
     CallerOutcome,
     CleanupStatus,
@@ -48,19 +59,8 @@ from app.components.c3_robustness_recovery.evidence import (
     TrialRole,
     validate_evidence_linkage,
 )
-from app.components.c3_robustness_recovery.interceptor import (
+from app.components.c3_robustness_recovery.runtime.interceptor import (
     OneShotTimeoutInterceptor,
-)
-from app.components.c3_robustness_recovery.schemas import (
-    CandidateFaultCase,
-    CaseValidationRequest,
-    EffectPhase,
-    FaultFamily,
-    HookType,
-    RecoveryContract,
-    ReleaseRuleMode,
-    TimeoutMode,
-    TimeoutPayload,
 )
 
 

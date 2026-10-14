@@ -5,7 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.responses import JSONResponse
 from app.components.c2_state_aware_workflow.router import router as c2_router
-from app.components.c3_robustness_recovery.router import router as c3_router
+from app.components.c3_robustness_recovery.api.router import router as c3_router
 from app.config import get_settings
 from app.database import engine
 from app.health import router as health_router

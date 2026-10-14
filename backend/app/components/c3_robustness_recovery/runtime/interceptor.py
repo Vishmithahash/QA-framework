@@ -20,18 +20,18 @@ import threading
 import time
 from typing import Any
 from uuid import uuid4
-from app.components.c3_robustness_recovery.adapter import ToolAdapter
-from app.components.c3_robustness_recovery.evidence import (
+from app.components.c3_robustness_recovery.contracts.schemas import (
+    HookType,
+    TimeoutMode,
+)
+from app.components.c3_robustness_recovery.runtime.adapter import ToolAdapter
+from app.components.c3_robustness_recovery.runtime.evidence import (
     CallerOutcome,
     CallInterceptionReceipt,
     current_utc_iso,
     fingerprint_args,
     sanitize_args,
     TimeoutBoundary,
-)
-from app.components.c3_robustness_recovery.schemas import (
-    HookType,
-    TimeoutMode,
 )
 
 
