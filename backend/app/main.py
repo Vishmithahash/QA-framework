@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.responses import JSONResponse
+from app.components.c2_state_aware_workflow.router import router as c2_router
 from app.components.c3_robustness_recovery.router import router as c3_router
 from app.config import get_settings
 from app.database import engine
@@ -26,6 +27,11 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.include_router(health_router)
+    app.include_router(
+        c2_router,
+        prefix="/api/v1/c2",
+        tags=["c2-state-aware-workflow"],
+    )
     app.include_router(c3_router)
 
     from app.components.c4_policy_aware_safety.api.routes import router as c4_router
