@@ -234,8 +234,11 @@ def test_unreached_trigger_produces_not_triggered():
 
 def test_failed_clean_control_retained_and_limits_exposure():
     """
-    Failed clean controls are retained without rerun-until-pass,
-    and cause exposure status to be classified as EXPOSURE_UNKNOWN.
+    Phase 3 Defect Fix:
+    Failed clean controls are retained without rerun-until-pass, but clean control
+    failure alone does not erase confirmed fault exposure.
+    Exposure remains CONFIRMED if fault trial evidence is sufficient,
+    while clean qualification is False and interpretation limitations are recorded.
     """
     req = build_default_phase2_request()
     evidence = run_matched_pair(
@@ -248,8 +251,14 @@ def test_failed_clean_control_retained_and_limits_exposure():
     # Clean control failure is recorded, not hidden or retried
     assert evidence.clean_trial.clean_qualified is False
     assert evidence.clean_trial.execution_status == ExecutionStatus.EXECUTION_ERROR
-    assert evidence.exposure_status == ExposureStatus.EXPOSURE_UNKNOWN
+    # Decoupled exposure status: confirmed because fault trial reached hook and timed out
+    assert evidence.exposure_status == ExposureStatus.CONFIRMED
     assert evidence.recovery_verdict is None
+    # Interpretation limitations recorded
+    assert any(
+        "Clean control baseline failed" in lim
+        for lim in evidence.interpretation_limitations
+    )
 
 
 def test_fixture_reset_and_equivalent_starting_states():

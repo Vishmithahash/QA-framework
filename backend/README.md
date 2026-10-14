@@ -304,52 +304,98 @@ Phase 2 builds the executable vertical slice: matched clean/fault trials, one-sh
 
 ---
 
-## Component 3 (C3): Robustness and Failure Recovery Testing (Phase 2)
+## Component 3 (C3): Robustness and Failure Recovery Testing (Phase 3)
 
-Phase 2 implements an executable vertical slice for matched clean/fault trial execution and verified `BEFORE_EFFECT` timeout fault exposure.
+Phase 3 hardens the paired-trial runtime, decouples fault exposure from clean qualification, adds strict per-tool occurrence counting and thread-safe atomic consumption, introduces scoped fixture partitioning and post-trial settling observation, verifies genuine transport socket timeouts, and truthful reporting of live prerequisites.
 
-### 1. Selected Tool and Target Integration Prerequisites
-- **Target Tool Identity**: `create_order` (side-effecting order placement operation in the NexaCart domain).
-- **Hermetic In-Memory Implementation**: `FakeNexaCartOrderToolAdapter` and `FakeNexaCartFixtureManager` allow full local demonstration and hermetic testing without live external dependencies.
-- **Live Integration Prerequisites (When connecting to real NexaCart)**:
-  - `NEXACART_BASE_URL`: HTTP base URL of the NexaCart NestJS application (e.g. `http://localhost:3000`).
-  - `NEXACART_DATABASE_URL`: Dedicated test PostgreSQL database URL for NexaCart (e.g. `postgresql://user:password@localhost:5433/nexacart_test`).
-  - *Status*: If these variables or services are absent, live execution is explicitly marked **BLOCKED** (`IntegrationBlockedError`), rather than misrepresenting fake test runs as live execution.
+### 1. Actual Supported Runtime Capability
+- **Targeted Fault Family**: `TIMEOUT_OR_DISCONNECTION` exclusively.
+- **Effect Phase**: `BEFORE_EFFECT` exclusively.
+- **Release Rule**: Single-call one-shot release (`SINGLE_CALL` or `COUNT_BASED` with `max_fault_occurrences=1`).
+- **Hook**: `DURING_TRANSPORT` or `PRE_TOOL_INVOCATION`.
+- **Target Tool**: `create_order` (side-effecting domain tool).
+- **Runtime Validation**: Rejects unsupported execution configurations (e.g. non-timeout families or `AFTER_COMMIT` phases) before execution rather than silently misbehaving.
 
-### 2. Local Developer Runner
+### 2. Demonstration vs. Live Modes
+- **Demonstration Mode (`TargetMode.FAKE_ADAPTER`, `CallerIdentity.SCRIPTED_CALLER`)**:
+  - Uses `FakeNexaCartOrderToolAdapter` and `FakeNexaCartFixtureManager`.
+  - Operates hermetically without external network or database dependencies.
+  - Retries initiated by the scripted caller are labeled `RecoveryActor.SCRIPTED_CALLER` and never misattributed to agent decisions.
+- **Live Target Mode (`TargetMode.LIVE_AUT`)**:
+  - Connects to genuine application-under-test tools via `NexaCartHttpToolAdapter` and `NexaCartPrismaFixtureManager`.
+  - **No Silent Fallback**: Live mode never falls back to fake adapters; missing configuration raises `IntegrationBlockedError`.
+  - **Status: BLOCKED**. Inspection confirms that no NexaCart source code, Prisma schema, or OpenAPI definition currently exists in the repository.
+- **Live Agent Mode (`CallerIdentity.ACTUAL_TESTED_AGENT`)**:
+  - Requires domain tool routing through the C3 interceptor while leaving LLM-provider calls untouched.
+  - **Status: BLOCKED**. No agent invocation protocol or tested agent implementation currently exists in the repository.
 
-Run the matched-pair execution runner from `backend/`:
+### 3. Prerequisites for Unblocking Live Execution
+To unblock live integration without mock or fake fallbacks, the following prerequisites must be provisioned:
+1. **Target OpenAPI/Tool Contract**: Authoritative endpoint definitions for `create_order` (request/response schemas, idempotency keys, error models).
+2. **Dedicated Test Database**: `NEXACART_DATABASE_URL` pointing to an isolated test database (e.g. `postgresql://user:pass@localhost:5433/nexacart_test`). Must **never** point to the QA framework Neon database.
+3. **HTTP Service**: `NEXACART_BASE_URL` pointing to the running AUT instance (e.g. `http://localhost:3000`).
+4. **Agent Protocol**: Invocation protocol allowing domain tool interception without altering agent recovery logic.
 
-```powershell
-# Standard local runner (executes clean trial, resets fixture, executes fault trial, outputs evidence JSON)
-python -m app.components.c3_robustness_recovery.runner --output-dir ./evidence_output
-
-# Fast synthetic mode for quick developer checks
-python -m app.components.c3_robustness_recovery.runner --synthetic --output-dir ./evidence_output
+Example placeholder environment variables in `.env` (opt-in only):
+```env
+# Dedicated AUT Target (Isolated test instance - DO NOT point at QA Neon DB)
+NEXACART_BASE_URL="http://localhost:3000"
+NEXACART_DATABASE_URL="postgresql://nexacart_tester:secret@localhost:5433/nexacart_test?sslmode=require"
 ```
 
-### 3. Fixture Isolation, Reset, and Observation
-- **Scoped Namespace**: The fixture manager scopes state to a dedicated namespace (`fix-nexacart-orders`), resetting only orders created within that namespace rather than wiping an entire database.
-- **Independent Observation**: Directly queries the state store to record initial and final `FixtureSnapshot`s with deterministic fingerprints (`state_fingerprint`) and record counts.
-- **Clean Starting Verification**: Verifies that both the clean trial and fault trial begin with equivalent clean starting states (`record_count == 0`).
+### 4. Running the Hardened Developer CLI
 
-### 4. Timeout Semantics and Exposure Criteria
-- **One-Shot BEFORE_EFFECT Episode**: Intercepts the configured tool call occurrence (e.g. occurrence 1) at the domain boundary before target forwarding.
-- **Target Prevention**: Strictly prevents forwarding to the target adapter, verifying that no side effects occur on the target before or during the fault.
-- **Boundary Hold**: Holds the response through the caller timeout boundary to deliver an authentic caller-observed timeout.
-- **One-Shot Consumption**: Subsequent calls pass through normally to the target; the C3 harness adds no automatic retries or recovery behavior.
-- **Exposure Classification**:
-  - `CONFIRMED`: Correlated receipts prove the hook was reached, target forwarding was prevented before effects, and the caller experienced the intended timeout.
-  - `NOT_TRIGGERED`: The target call occurrence was never reached during the trial.
-  - `EXPOSURE_UNKNOWN`: Clean control failed (limiting fault interpretation) or receipts were missing/contradictory.
+Run commands from the `backend/` directory using the existing virtual environment:
 
-### 5. Reported Statuses and Decoupled Verdicts
-- **Execution Status**: `COMPLETED`, `TIMED_OUT`, `CANCELLED`, `EXECUTION_ERROR`.
-- **Clean Qualification**: `true` or `false` (failed clean controls are retained and never rerun until pass).
-- **Exposure Status**: `CONFIRMED`, `NOT_TRIGGERED`, `EXPOSURE_UNKNOWN`.
-- **Recovery Verdict**: Strictly `null` (`None`). Phase 2 observes exposure and state; recovery scoring is deferred to later phases.
+```powershell
+# Standard local paired-trial runner (demonstration mode)
+.\.venv\Scripts\python.exe -m app.components.c3_robustness_recovery.runner --output-dir ./evidence_output
 
-### 6. Known Limitations & Future Integration
-- Phase 2 tests only `BEFORE_EFFECT` timeouts on a single domain tool.
-- Automatic case generation, C2 workflow assertions, and shared database persistence remain deferred.
+# Fast synthetic timeout mode
+.\.venv\Scripts\python.exe -m app.components.c3_robustness_recovery.runner --synthetic --output-dir ./evidence_output
+
+# Live AUT mode (will cleanly report BLOCKED with exact missing prerequisites)
+.\.venv\Scripts\python.exe -m app.components.c3_robustness_recovery.runner --live
+```
+
+### 5. Exposure vs. Clean-Qualification Separation
+- **Exposure Status (`CONFIRMED`, `NOT_TRIGGERED`, `EXPOSURE_UNKNOWN`)**:
+  - Evaluated strictly from correlated fault trial receipts (`fault_injected=True`, `forwarded_to_target=False`, `caller_outcome=TIMEOUT`).
+  - **Defect Fixed**: A failed clean control alone no longer forces `EXPOSURE_UNKNOWN`. Confirmed exposure coexists with failed clean qualification.
+- **Clean Qualification (`true` / `false`)**:
+  - Evaluates whether the normal control trial completed without error and performed the expected domain state mutation.
+  - Failed clean controls are retained and never rerun until pass.
+- **Interpretation Limitations**:
+  - If clean qualification fails, the limitation is documented in `interpretation_limitations` while exposure remains truthfully `CONFIRMED`.
+- **Recovery Verdict**: Strictly `null` (`None`) throughout Phase 3 (recovery evaluation is deferred).
+
+### 6. Fixture Isolation, Reset, and Settling Limitations
+- **Partitioned Namespaces**: Each trial uses an isolated partition namespace (`fixture_id_pair_id_clean` vs `fixture_id_pair_id_fault`), ensuring scoped resets never touch unrelated records.
+- **Equivalence Verification**: Verifies identical initial logical state (record count, total amount, and state fingerprint) prior to injection.
+- **Post-Trial Settling**: Observes the fixture after trial completion for a bounded settling period. If late in-flight mutations appear, `cleanup_status` is marked `CLEANUP_UNCERTAIN` and the fixture is marked unavailable for reuse (`fixture_reusable=False`).
+
+### 7. Automated Test and Quality Suite
+
+```powershell
+# Run all tests (Foundation, Phase 2, and Phase 3 verification)
+.\.venv\Scripts\python.exe -m pytest
+
+# Run Ruff linter
+.\.venv\Scripts\python.exe -m ruff check .
+
+# Check formatting
+.\.venv\Scripts\python.exe -m ruff format --check .
+
+# Pip dependency consistency check
+.\.venv\Scripts\python.exe -m pip check
+```
+
+### 8. Remaining C3 Backend Roadmap (Out of Scope for Phase 3)
+- Automatic candidate fault case generation.
+- Remaining fault families (`TRANSIENT_5XX_SERVER_ERROR`, `HTTP_429_RATE_LIMITING`, `TOOL_UNAVAILABILITY`, `MALFORMED_OR_TRUNCATED_RESPONSE`).
+- `AFTER_COMMIT` post-commit fault injection and observation.
+- C2 state-aware workflow assertion fact consumption.
+- Shared Neon database persistence and Alembic migrations for test evidence.
+- Research metrics and final LLM agent recovery evaluation scoring.
+
 
