@@ -28,6 +28,10 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(c3_router)
 
+    from app.components.c4_policy_aware_safety.api.routes import router as c4_router
+
+    app.include_router(c4_router)
+
     @app.exception_handler(RequestValidationError)
     async def c3_request_validation_exception_handler(
         request: Request, exc: RequestValidationError
