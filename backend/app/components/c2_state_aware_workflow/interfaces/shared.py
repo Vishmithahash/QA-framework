@@ -143,3 +143,21 @@ class UnifiedReportExportInterface(Protocol):
     ) -> dict[str, Any]:
         """Exports C2 verdict and evidence records to the unified framework report."""
         ...
+
+
+@runtime_checkable
+class ModelAssistedBuilderProvider(Protocol):
+    """Optional boundary interface for model-assisted reference model synthesis.
+
+    Integration Dependency:
+    Reuses shared LLM provider abstraction when available.
+    Core functionality and test suites MUST operate deterministically without paid API credentials.
+    """
+
+    def generate_candidate_model(
+        self,
+        workflow_input: WorkflowInput,
+        temperature: float = 0.0,
+    ) -> dict[str, Any] | None:
+        """Generates candidate workflow model definition dictionary using LLM assistance."""
+        ...

@@ -23,6 +23,13 @@ from app.components.c2_state_aware_workflow.contracts.enums import (
     ReasonCode,
     TestCategory,
     TestReadinessStatus,
+    TriState,
+    ValidationSeverity,
+)
+from app.components.c2_state_aware_workflow.contracts.validation import (
+    ModelReadinessInfo,
+    ValidationIssue,
+    ValidationReport,
 )
 from app.components.c2_state_aware_workflow.contracts.evaluation_result import (
     FirstDivergenceInfo,
@@ -71,6 +78,7 @@ __all__ = [
     "GeneratedWorkflowTest",
     "LifecycleStatus",
     "LogicalOperator",
+    "ModelReadinessInfo",
     "MutationProvenance",
     "MutationType",
     "ObservableEventMapping",
@@ -88,6 +96,10 @@ __all__ = [
     "TestReadiness",
     "TestReadinessStatus",
     "ToolSpecification",
+    "TriState",
+    "ValidationIssue",
+    "ValidationReport",
+    "ValidationSeverity",
     "VariableUpdate",
     "WorkflowCoverageInfo",
     "WorkflowEvaluationResult",

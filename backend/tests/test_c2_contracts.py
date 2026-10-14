@@ -83,6 +83,7 @@ class TestStructuredPredicates:
             "status": "PAID",
             "amount": 89.0,
             "items": ["item1", "item2"],
+            "notes": None,
         }
 
         assert StructuredPredicate(

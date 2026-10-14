@@ -14,6 +14,8 @@ Domain assumptions explicitly labelled:
 - Status: Strictly DRAFT (per Phase 1 requirement).
 """
 
+from typing import Any
+
 from app.components.c2_state_aware_workflow.contracts.efsm import (
     EFSMState,
     EFSMTransition,
@@ -174,7 +176,11 @@ def get_draft_refund_workflow_definition() -> WorkflowModelDefinition:
                 source_state=STATE_PAID_ORDERS_RETRIEVED,
                 target_state=STATE_LATEST_ORDER_IDENTIFIED,
                 trigger_event="EV_LATEST_ORDER_SELECTED",
-                description="Select order 503 because it is chronologically later than order 501",
+                description=(
+                    "Select order 503 because it is chronologically later than order 501 "
+                    "(2026-10-10 > 2026-10-01). Tie-breaker rule: if created_at timestamps are identical, "
+                    "the order with the largest numeric order_id is selected (max(order_id))."
+                ),
                 guards=[
                     StructuredPredicate(
                         field="customer_id",
@@ -238,6 +244,54 @@ def get_draft_refund_workflow_definition() -> WorkflowModelDefinition:
                         field="selected_order_id",
                         operator=PredicateOperator.EQ,
                         value=503,
+                    ),
+                ],
+                variable_updates=[
+                    VariableUpdate(
+                        variable_name="selected_order_status",
+                        operation="set",
+                        value="REFUNDED",
+                    )
+                ],
+                expected_state_effects=[
+                    StateEffectSpec(
+                        entity_type="refund",
+                        entity_id_var="selected_order_id",
+                        field="status",
+                        effect_type=EffectType.CREATED,
+                        expected_value="COMPLETED",
+                        description="Refund record must be created with status COMPLETED",
+                    ),
+                    StateEffectSpec(
+                        entity_type="order",
+                        entity_id_var="selected_order_id",
+                        field="payment_status",
+                        effect_type=EffectType.UPDATED,
+                        expected_value="REFUNDED",
+                        description="Order payment status must be updated to REFUNDED",
+                    ),
+                ],
+            ),
+            # Justified alternative path: synchronous gateway completion
+            EFSMTransition(
+                transition_id="T4_ALT_SYNCHRONOUS_REFUND",
+                source_state=STATE_LATEST_ORDER_IDENTIFIED,
+                target_state=STATE_REFUNDED,
+                trigger_event="EV_REFUND_CONFIRMED",
+                description=(
+                    "Permitted alternative path: synchronous payment gateway returns immediate refund "
+                    "confirmation upon request submission, bypassing intermediate status polling state."
+                ),
+                guards=[
+                    StructuredPredicate(
+                        field="selected_order_id",
+                        operator=PredicateOperator.EQ,
+                        value=503,
+                    ),
+                    StructuredPredicate(
+                        field="selected_order_status",
+                        operator=PredicateOperator.EQ,
+                        value="PAID",
                     ),
                 ],
                 variable_updates=[
@@ -461,7 +515,10 @@ def get_draft_refund_workflow_input() -> WorkflowInput:
             WorkflowRule(
                 rule_id="RULE-LATEST-ORDERING",
                 name="Latest Chronological Order",
-                description="The latest order is determined by chronological created_at timestamp (503 > 501).",
+                description=(
+                    "The latest order is determined by chronological created_at timestamp (503 > 501). "
+                    "Tie-breaker rule: if created_at timestamps are identical, the order with largest order_id is chosen."
+                ),
                 rule_type="ordering",
                 predicate=StructuredPredicate(
                     field="selected_order_id",
@@ -608,3 +665,108 @@ def get_draft_refund_create_request() -> CreateDraftWorkflowModelRequest:
         description=definition.description,
         definition=definition,
     )
+
+
+def demonstrate_refund_lifecycle(db: Any) -> dict[str, Any]:
+    """Demonstrates complete Phase 2 lifecycle on the synthetic refund example:
+
+    1. Proposes candidate model from normalized WorkflowInput.
+    2. Persists as DRAFT.
+    3. Executes structural and bounded semantic validation (persisting validation evidence).
+    4. Performs explicit human domain review and approval (freezing definition).
+    5. Verifies approved model immutability.
+    6. Verifies model readiness (READY with no runtime PASS verdict).
+
+    Never silently approves the example.
+    """
+    from app.components.c2_state_aware_workflow.services.model_builder import (
+        ModelBuilderService,
+    )
+    from app.components.c2_state_aware_workflow.services.model_service import (
+        ApprovedModelImmutableError,
+        WorkflowModelService,
+    )
+
+    builder = ModelBuilderService()
+    service = WorkflowModelService(db)
+
+    # Step 1: Proposal
+    wf_input = get_draft_refund_workflow_input()
+    build_result = builder.build_candidate_model(
+        workflow_input=wf_input,
+        model_id="ecommerce-refund-latest-paid",
+        version="1.0.0",
+    )
+    assert build_result.success, f"Proposal failed: {build_result.diagnostics}"
+    candidate_def = build_result.candidate_model
+    assert candidate_def is not None
+
+    # Step 2: Persistence as DRAFT
+    create_req = CreateDraftWorkflowModelRequest(
+        project_id=candidate_def.project_id,
+        domain=candidate_def.domain,
+        name=candidate_def.name,
+        description=candidate_def.description,
+        definition=candidate_def,
+    )
+    draft_record = service.create_draft_model(create_req)
+    assert draft_record.lifecycle_status == "DRAFT"
+
+    # Step 3: Validation
+    model_record, val_record, val_report = service.validate_model_version(
+        project_id=draft_record.project_id,
+        model_id=draft_record.model_id,
+        version=draft_record.version,
+    )
+    assert val_report.is_valid, f"Validation failed: {val_report.errors}"
+    assert not val_report.has_blocking_issues
+    assert model_record.lifecycle_status == "VALIDATED"
+    assert val_record.definition_hash == model_record.content_hash
+
+    # Step 4: Explicit Review and Approval
+    review_basis = "Verified customer 42 ownership, 503 latest selection, unpaid rejection, and immutability rules."
+    review_notes = (
+        "Permitted alternative path T4_ALT_SYNCHRONOUS_REFUND inspected and accepted."
+    )
+    approved_record = service.approve_model_version(
+        project_id=draft_record.project_id,
+        model_id=draft_record.model_id,
+        version=draft_record.version,
+        reviewer="dev-lead@qa-framework.internal",
+        review_basis=review_basis,
+        review_notes=review_notes,
+        is_development_review=True,
+        confirm_definition_hash=model_record.content_hash,
+    )
+    assert approved_record.lifecycle_status == "APPROVED"
+    assert approved_record.reviewed_by is not None
+    assert approved_record.content_hash == draft_record.content_hash
+
+    # Step 5: Verify Immutability
+    immutability_enforced = False
+    try:
+        service.assert_version_mutable(approved_record)
+    except ApprovedModelImmutableError:
+        immutability_enforced = True
+    assert immutability_enforced, "Approved version must be immutable"
+
+    # Step 6: Readiness
+    readiness = service.check_model_readiness(
+        project_id=draft_record.project_id,
+        model_id=draft_record.model_id,
+        version=draft_record.version,
+    )
+    assert readiness.is_ready
+    assert readiness.status == "READY"
+    assert readiness.verdict is None  # Never returns runtime PASS for model validation
+
+    return {
+        "candidate_model_id": candidate_def.model_id,
+        "content_hash": approved_record.content_hash,
+        "lifecycle_status": approved_record.lifecycle_status,
+        "reviewed_by": approved_record.reviewed_by,
+        "review_basis": approved_record.review_basis,
+        "is_ready": readiness.is_ready,
+        "validation_report_id": val_record.id,
+        "checks_performed": val_report.checks_performed,
+    }
