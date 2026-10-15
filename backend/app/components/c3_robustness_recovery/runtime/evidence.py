@@ -311,9 +311,15 @@ def save_evidence_artifact(
 ) -> Path:
     """
     Save the matched pair evidence to a local versioned JSON file.
+    Validates internal evidence linkage before writing.
     Does not use database persistence or background services.
     Ensures safe unique filenames to prevent accidental overwrites.
     """
+    issues = validate_evidence_linkage(evidence)
+    if issues:
+        raise EvidenceLinkageError(
+            f"Evidence linkage validation failed prior to export: {'; '.join(issues)}"
+        )
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
     file_path = out_path / f"matched_pair_{evidence.pair_id}.json"

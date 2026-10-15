@@ -38,6 +38,16 @@ from app.components.c3_robustness_recovery.contracts.schemas import (
     ValidationScope,
     ValidationStatus,
 )
+from app.components.c3_robustness_recovery.contracts.generation import (
+    CaseGenerationRequest,
+    CaseGenerationResponse,
+    CoverageSummary,
+    FrozenSuite,
+    GenerationCounters,
+    GenerationFilters,
+    GenerationPolicy,
+    GenerationStatus,
+)
 
 __all__ = [
     "APPLICATION_AWARE_HOOKS",
@@ -45,8 +55,11 @@ __all__ = [
     "AdapterCapabilityManifest",
     "AssertionMetadata",
     "CandidateFaultCase",
+    "CaseGenerationRequest",
+    "CaseGenerationResponse",
     "CaseValidationRequest",
     "CaseValidationResponse",
+    "CoverageSummary",
     "EffectPhase",
     "EnvironmentMetadata",
     "FaultCatalogResponse",
@@ -55,6 +68,11 @@ __all__ = [
     "FaultParameterConstraints",
     "FaultPayload",
     "FixtureMetadata",
+    "FrozenSuite",
+    "GenerationCounters",
+    "GenerationFilters",
+    "GenerationPolicy",
+    "GenerationStatus",
     "HookType",
     "MalformedMode",
     "MalformedResponsePayload",

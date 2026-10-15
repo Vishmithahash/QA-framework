@@ -20,6 +20,7 @@ import argparse
 from collections.abc import Callable
 import json
 from pathlib import Path
+import sys
 import time
 from typing import Any
 from uuid import uuid4
@@ -308,6 +309,19 @@ def run_matched_pair(
         and clean_final_fixture.record_count > clean_initial_fixture.record_count
     )
 
+    clean_settled = (
+        not clean_interceptor._is_active
+        and clean_interceptor.in_flight_calls == 0
+        and clean_final_fixture is not None
+        and bool(clean_final_fixture.state_fingerprint)
+        and settling_period_seconds > 0
+    )
+    clean_cleanup_status = (
+        CleanupStatus.CLEANUP_VERIFIED
+        if clean_settled
+        else CleanupStatus.CLEANUP_UNCERTAIN
+    )
+
     clean_evidence = TrialEvidence(
         trial_id=clean_trial_id,
         pair_id=pair_id,
@@ -321,7 +335,7 @@ def run_matched_pair(
         total_calls_observed=clean_interceptor.total_call_counter,
         duration_seconds=clean_duration,
         recovery_actor=default_recovery_actor,
-        cleanup_status=CleanupStatus.CLEANUP_VERIFIED,
+        cleanup_status=clean_cleanup_status,
         error_message=clean_error_msg,
     )
 
@@ -394,7 +408,17 @@ def run_matched_pair(
         != fault_settling_fixture.state_fingerprint
     )
 
-    if late_effects_detected:
+    operations_settled = (
+        not fault_interceptor._is_active
+        and fault_interceptor.in_flight_calls == 0
+        and fault_final_fixture is not None
+        and fault_settling_fixture is not None
+        and bool(fault_final_fixture.state_fingerprint)
+        and bool(fault_settling_fixture.state_fingerprint)
+        and settling_period_seconds > 0
+    )
+
+    if late_effects_detected or not operations_settled:
         cleanup_status = CleanupStatus.CLEANUP_UNCERTAIN
         fixture_reusable = False
     else:
@@ -610,7 +634,8 @@ def main() -> None:
         )
     except IntegrationBlockedError as ibe:
         print(f"\n[BLOCKED] {ibe}")
-        return
+        # Return documented nonzero exit code (2) for requested live execution blocked by prerequisites
+        sys.exit(2)
 
     print("\n=== Matched Pair Execution Complete ===")
     print(f"Pair ID:          {evidence.pair_id}")

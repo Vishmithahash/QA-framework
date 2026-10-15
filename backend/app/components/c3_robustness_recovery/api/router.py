@@ -8,10 +8,17 @@ Endpoints:
 """
 
 from fastapi import APIRouter, status
+from app.components.c3_robustness_recovery.contracts.generation import (
+    CaseGenerationRequest,
+    CaseGenerationResponse,
+)
 from app.components.c3_robustness_recovery.contracts.schemas import (
     CaseValidationRequest,
     CaseValidationResponse,
     FaultCatalogResponse,
+)
+from app.components.c3_robustness_recovery.services.generation import (
+    generate_fault_suite,
 )
 from app.components.c3_robustness_recovery.services.validation import (
     get_operational_fault_catalog,
@@ -54,3 +61,20 @@ def get_fault_catalog() -> FaultCatalogResponse:
 def validate_case(request: CaseValidationRequest) -> CaseValidationResponse:
     """Validate declared candidate fault case against adapter capability manifest."""
     return validate_candidate_case(request)
+
+
+@router.post(
+    "/cases/generate",
+    response_model=CaseGenerationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Generate and freeze candidate fault case suite statically",
+    description=(
+        "Performs deterministic static candidate generation, static validation, semantic deduplication, "
+        "and bounded selection from declared system metadata and capability combinations. Returns HTTP 200 "
+        "with selected cases and a content-addressed frozen suite snapshot. Malformed syntax returns HTTP 422. "
+        "Does not execute trials, contact external targets, or perform database writes."
+    ),
+)
+def generate_cases(request: CaseGenerationRequest) -> CaseGenerationResponse:
+    """Statically generate, deduplicate, select, and freeze a bounded fault test suite."""
+    return generate_fault_suite(request)

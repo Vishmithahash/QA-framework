@@ -287,6 +287,45 @@ class NexaCartHttpToolAdapter(ToolAdapter):
         )
 
 
+def normalize_db_identity(url_str: str) -> dict[str, Any] | None:
+    """
+    Parse and normalize a database URL to compare logical database identities.
+    Normalizes scheme (stripping async/driver prefixes), host (lowercasing, resolving loopbacks),
+    port (defaulting 5432 for Postgres), path (database name), and user.
+    """
+    if not url_str or not url_str.strip():
+        return None
+    try:
+        from urllib.parse import urlsplit
+
+        parts = urlsplit(url_str.strip())
+        scheme = parts.scheme.lower()
+        if "postgres" in scheme:
+            base_scheme = "postgresql"
+            default_port = 5432
+        else:
+            base_scheme = scheme
+            default_port = None
+
+        hostname = (parts.hostname or "").lower().strip()
+        if hostname in ("localhost", "127.0.0.1", "::1"):
+            hostname = "127.0.0.1"
+
+        port = parts.port or default_port
+        database = parts.path.lstrip("/").strip()
+        username = parts.username or ""
+
+        return {
+            "scheme": base_scheme,
+            "host": hostname,
+            "port": port,
+            "database": database,
+            "username": username,
+        }
+    except Exception:
+        return None
+
+
 class NexaCartPrismaFixtureManager(FixtureManager):
     """
     Direct inspection and reset manager for NexaCart PostgreSQL/Prisma instance.
@@ -302,16 +341,28 @@ class NexaCartPrismaFixtureManager(FixtureManager):
         self._verify_not_qa_database()
 
     def _verify_not_qa_database(self) -> None:
-        """Prevent pointing fixture reset operations at the QA Neon framework database."""
+        """
+        Prevent pointing fixture reset operations at the QA Neon framework database.
+        Compares both raw string values and normalized database identities (host, port, dbname).
+        Does not claim normalization resolves unknown host aliases; unverified access remains blocked.
+        """
         qa_db_url = os.environ.get("DATABASE_URL", "")
-        if (
-            self.database_url
-            and qa_db_url
-            and self.database_url.strip() == qa_db_url.strip()
-        ):
-            raise IntegrationBlockedError(
-                "NEXACART_DATABASE_URL cannot point to the QA Neon framework database."
-            )
+        if self.database_url and qa_db_url:
+            if self.database_url.strip() == qa_db_url.strip():
+                raise IntegrationBlockedError(
+                    "NEXACART_DATABASE_URL cannot point to the QA Neon framework database."
+                )
+            qa_norm = normalize_db_identity(qa_db_url)
+            target_norm = normalize_db_identity(self.database_url)
+            if qa_norm and target_norm:
+                if (
+                    qa_norm["host"] == target_norm["host"]
+                    and qa_norm["port"] == target_norm["port"]
+                    and qa_norm["database"] == target_norm["database"]
+                ):
+                    raise IntegrationBlockedError(
+                        "NEXACART_DATABASE_URL points to the QA Neon framework database (normalized identity match)."
+                    )
 
     def prepare(self, namespace: str = "default") -> FixtureSnapshot:
         self._verify_not_qa_database()
