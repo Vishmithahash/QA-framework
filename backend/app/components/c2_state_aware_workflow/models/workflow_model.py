@@ -4,7 +4,9 @@ import uuid
 from datetime import datetime
 from sqlalchemy import (
     JSON,
+    Boolean,
     DateTime,
+    Index,
     String,
     Text,
     UniqueConstraint,
@@ -86,7 +88,11 @@ class C2WorkflowModel(Base):
         onupdate=func.now(),
     )
 
-    # Future review/approval metadata fields
+    # Review and approval audit metadata fields
+    review_basis: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
     review_notes: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
@@ -114,5 +120,72 @@ class C2WorkflowModel(Base):
             "model_id",
             "version",
             name="uq_c2_model_project_model_version",
+        ),
+    )
+
+
+class C2ValidationReport(Base):
+    """Persisted reference model validation report.
+
+    Table prefix: c2_
+    Associates structured validation findings with the exact model version
+    and canonical definition hash.
+    """
+
+    __tablename__ = "c2_validation_reports"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    project_id: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+        index=True,
+    )
+    model_id: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+        index=True,
+    )
+    version: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+    definition_hash: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        index=True,
+    )
+    validator_version: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="2.0.0",
+    )
+    is_valid: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+    )
+    has_blocking_issues: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+    )
+    report: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_c2_val_project_model_version",
+            "project_id",
+            "model_id",
+            "version",
         ),
     )

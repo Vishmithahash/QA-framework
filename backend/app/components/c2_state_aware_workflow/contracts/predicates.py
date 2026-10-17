@@ -11,7 +11,75 @@ from app.components.c2_state_aware_workflow.contracts.enums import (
     EffectType,
     LogicalOperator,
     PredicateOperator,
+    TriState,
 )
+
+
+class PredicateEvaluationError(Exception):
+    """Base exception for predicate evaluation errors."""
+
+
+class IncompatibleTypeError(PredicateEvaluationError, TypeError):
+    """Raised when operand types are incompatible for a typed comparison."""
+
+
+class MissingValueError(PredicateEvaluationError, KeyError):
+    """Raised when a required observation or variable is missing."""
+
+
+class UnsupportedOperatorError(PredicateEvaluationError, ValueError):
+    """Raised when an unknown or unsupported operator is encountered."""
+
+
+def extract_context_value(context: Any, field_name: str) -> tuple[Any, bool]:
+    """Safely extracts a value from context and identifies if it is MISSING.
+
+    Returns:
+        tuple[Any, bool]: (value, is_missing).
+        If is_missing is True: the observation is completely absent or marked MISSING.
+        If is_missing is False and value is None: the field is EXPLICIT_NULL.
+        If is_missing is False and value is not None: the field has a PRESENT concrete value.
+    """
+    if context is None:
+        return None, True
+
+    # Dictionary context lookup
+    if isinstance(context, dict):
+        if field_name in context:
+            raw = context[field_name]
+            # Check for ObservedValue wrapper from runtime evidence
+            if hasattr(raw, "presence"):
+                presence_val = getattr(raw.presence, "value", raw.presence)
+                if presence_val == "MISSING":
+                    return None, True
+                if presence_val == "EXPLICIT_NULL":
+                    return None, False
+                return getattr(raw, "value", None), False
+            if raw is None:
+                return None, False
+            return raw, False
+
+        # Support dot-notation access: e.g. "order.status"
+        if "." in field_name:
+            parts = field_name.split(".", 1)
+            if parts[0] in context and isinstance(context[parts[0]], dict):
+                return extract_context_value(context[parts[0]], parts[1])
+
+        return None, True
+
+    # Object attribute context lookup
+    if hasattr(context, field_name):
+        raw = getattr(context, field_name)
+        if hasattr(raw, "presence"):
+            presence_val = getattr(raw.presence, "value", raw.presence)
+            if presence_val == "MISSING":
+                return None, True
+            if presence_val == "EXPLICIT_NULL":
+                return None, False
+            return getattr(raw, "value", None), False
+        return raw, False
+
+    return None, True
 
 
 class StructuredPredicate(BaseModel):
@@ -88,68 +156,235 @@ class StructuredPredicate(BaseModel):
 
         return self
 
-    def evaluate(self, context: dict[str, Any]) -> bool:
+    def evaluate(
+        self,
+        context: dict[str, Any] | Any,
+        raise_on_type_error: bool = False,
+    ) -> TriState:
         """Safely evaluates this structured predicate against a variable/attribute context.
 
-        Pure Python comparison only. Zero eval, exec, SQL, or shell execution.
+        Implements three-valued predicate logic (TRUE, FALSE, UNKNOWN).
+        - Comparing a missing field with null returns UNKNOWN.
+        - FALSE AND UNKNOWN returns FALSE.
+        - TRUE AND UNKNOWN returns UNKNOWN.
+        - TRUE OR UNKNOWN returns TRUE.
+        - FALSE OR UNKNOWN returns UNKNOWN.
+        - Negating UNKNOWN returns UNKNOWN.
+
+        Pure Python typed comparison only. Zero eval, exec, SQL, or shell execution.
         """
+        # Composite evaluation
         if self.logical_op is not None and self.children is not None:
             if self.logical_op == LogicalOperator.AND:
-                return all(child.evaluate(context) for child in self.children)
+                has_unknown = False
+                for child in self.children:
+                    res = child.evaluate(
+                        context, raise_on_type_error=raise_on_type_error
+                    )
+                    if res == TriState.FALSE:
+                        return TriState.FALSE
+                    if res == TriState.UNKNOWN:
+                        has_unknown = True
+                return TriState.UNKNOWN if has_unknown else TriState.TRUE
+
             if self.logical_op == LogicalOperator.OR:
-                return any(child.evaluate(context) for child in self.children)
+                has_unknown = False
+                for child in self.children:
+                    res = child.evaluate(
+                        context, raise_on_type_error=raise_on_type_error
+                    )
+                    if res == TriState.TRUE:
+                        return TriState.TRUE
+                    if res == TriState.UNKNOWN:
+                        has_unknown = True
+                return TriState.UNKNOWN if has_unknown else TriState.FALSE
+
             if self.logical_op == LogicalOperator.NOT:
-                return not self.children[0].evaluate(context)
+                child_res = self.children[0].evaluate(
+                    context, raise_on_type_error=raise_on_type_error
+                )
+                if child_res == TriState.TRUE:
+                    return TriState.FALSE
+                if child_res == TriState.FALSE:
+                    return TriState.TRUE
+                return TriState.UNKNOWN
 
         # Leaf evaluation
-        assert self.field is not None
-        actual_val = context.get(self.field)
+        assert self.field is not None, "Leaf predicate must specify 'field'"
+        actual_val, actual_is_missing = extract_context_value(context, self.field)
 
+        # Target value resolution
         target_val = self.value
+        target_is_missing = False
         if self.value_is_var_ref and isinstance(self.value, str):
-            target_val = context.get(self.value)
+            target_val, target_is_missing = extract_context_value(context, self.value)
+
+        # If a field is missing, comparisons with it return UNKNOWN
+        # (e.g. comparing a missing field with null returns UNKNOWN)
+        if actual_is_missing or target_is_missing:
+            return TriState.UNKNOWN
 
         match self.operator:
+            case PredicateOperator.IS_NULL:
+                return TriState.TRUE if actual_val is None else TriState.FALSE
+
+            case PredicateOperator.IS_NOT_NULL:
+                return TriState.TRUE if actual_val is not None else TriState.FALSE
+
             case PredicateOperator.EQ:
-                return actual_val == target_val
+                if actual_val is None and target_val is None:
+                    return TriState.TRUE
+                if actual_val is None or target_val is None:
+                    return TriState.FALSE
+                # Typed comparison: prevent silent bool to int coercion (e.g. True == 1)
+                if isinstance(actual_val, bool) != isinstance(target_val, bool):
+                    return TriState.FALSE
+                return TriState.TRUE if actual_val == target_val else TriState.FALSE
+
             case PredicateOperator.NEQ:
-                return actual_val != target_val
-            case PredicateOperator.GT:
+                if actual_val is None and target_val is None:
+                    return TriState.FALSE
                 if actual_val is None or target_val is None:
-                    return False
-                return actual_val > target_val
-            case PredicateOperator.GTE:
+                    return TriState.TRUE
+                if isinstance(actual_val, bool) != isinstance(target_val, bool):
+                    return TriState.TRUE
+                return TriState.TRUE if actual_val != target_val else TriState.FALSE
+
+            case (
+                PredicateOperator.GT
+                | PredicateOperator.GTE
+                | PredicateOperator.LT
+                | PredicateOperator.LTE
+            ):
                 if actual_val is None or target_val is None:
-                    return False
-                return actual_val >= target_val
-            case PredicateOperator.LT:
-                if actual_val is None or target_val is None:
-                    return False
-                return actual_val < target_val
-            case PredicateOperator.LTE:
-                if actual_val is None or target_val is None:
-                    return False
-                return actual_val <= target_val
+                    if raise_on_type_error:
+                        raise IncompatibleTypeError(
+                            f"Cannot perform ordered comparison {self.operator.value} with null operand."
+                        )
+                    return TriState.UNKNOWN
+
+                # Typed check: numbers vs numbers, strings vs strings
+                is_actual_num = isinstance(actual_val, (int, float)) and not isinstance(
+                    actual_val, bool
+                )
+                is_target_num = isinstance(target_val, (int, float)) and not isinstance(
+                    target_val, bool
+                )
+
+                if (is_actual_num and not is_target_num) or (
+                    is_target_num and not is_actual_num
+                ):
+                    if raise_on_type_error:
+                        raise IncompatibleTypeError(
+                            f"Incompatible types for ordered comparison: {type(actual_val).__name__} and {type(target_val).__name__}"
+                        )
+                    return TriState.UNKNOWN
+
+                if not is_actual_num and type(actual_val) is not type(target_val):
+                    if raise_on_type_error:
+                        raise IncompatibleTypeError(
+                            f"Incompatible types for ordered comparison: {type(actual_val).__name__} and {type(target_val).__name__}"
+                        )
+                    return TriState.UNKNOWN
+
+                try:
+                    if self.operator == PredicateOperator.GT:
+                        return (
+                            TriState.TRUE if actual_val > target_val else TriState.FALSE
+                        )
+                    if self.operator == PredicateOperator.GTE:
+                        return (
+                            TriState.TRUE
+                            if actual_val >= target_val
+                            else TriState.FALSE
+                        )
+                    if self.operator == PredicateOperator.LT:
+                        return (
+                            TriState.TRUE if actual_val < target_val else TriState.FALSE
+                        )
+                    if self.operator == PredicateOperator.LTE:
+                        return (
+                            TriState.TRUE
+                            if actual_val <= target_val
+                            else TriState.FALSE
+                        )
+                except TypeError as exc:
+                    if raise_on_type_error:
+                        raise IncompatibleTypeError(str(exc)) from exc
+                    return TriState.UNKNOWN
+
             case PredicateOperator.IN:
                 if target_val is None:
-                    return False
-                return actual_val in target_val
+                    return TriState.FALSE
+                if not isinstance(target_val, (list, tuple, set, dict, str)):
+                    if raise_on_type_error:
+                        raise IncompatibleTypeError(
+                            f"Operator 'in' requires container target, got {type(target_val).__name__}"
+                        )
+                    return TriState.UNKNOWN
+                try:
+                    return TriState.TRUE if actual_val in target_val else TriState.FALSE
+                except TypeError as exc:
+                    if raise_on_type_error:
+                        raise IncompatibleTypeError(str(exc)) from exc
+                    return TriState.UNKNOWN
+
             case PredicateOperator.NOT_IN:
                 if target_val is None:
-                    return True
-                return actual_val not in target_val
-            case PredicateOperator.IS_NULL:
-                return actual_val is None
-            case PredicateOperator.IS_NOT_NULL:
-                return actual_val is not None
+                    return TriState.TRUE
+                if not isinstance(target_val, (list, tuple, set, dict, str)):
+                    if raise_on_type_error:
+                        raise IncompatibleTypeError(
+                            f"Operator 'not_in' requires container target, got {type(target_val).__name__}"
+                        )
+                    return TriState.UNKNOWN
+                try:
+                    return TriState.FALSE if actual_val in target_val else TriState.TRUE
+                except TypeError as exc:
+                    if raise_on_type_error:
+                        raise IncompatibleTypeError(str(exc)) from exc
+                    return TriState.UNKNOWN
+
             case PredicateOperator.CONTAINS:
                 if actual_val is None:
-                    return False
-                return target_val in actual_val
+                    return TriState.FALSE
+                if not isinstance(actual_val, (list, tuple, set, dict, str)):
+                    if raise_on_type_error:
+                        raise IncompatibleTypeError(
+                            f"Operator 'contains' requires container field, got {type(actual_val).__name__}"
+                        )
+                    return TriState.UNKNOWN
+                try:
+                    return TriState.TRUE if target_val in actual_val else TriState.FALSE
+                except TypeError as exc:
+                    if raise_on_type_error:
+                        raise IncompatibleTypeError(str(exc)) from exc
+                    return TriState.UNKNOWN
+
             case PredicateOperator.MATCHES_ENTITY:
-                return actual_val == target_val
+                if actual_val is None or target_val is None:
+                    return TriState.FALSE
+                return TriState.TRUE if actual_val == target_val else TriState.FALSE
+
             case _:
-                return False
+                if raise_on_type_error:
+                    raise UnsupportedOperatorError(
+                        f"Unsupported predicate operator: {self.operator}"
+                    )
+                return TriState.FALSE
+
+    def evaluate_bool(
+        self,
+        context: dict[str, Any] | Any,
+        unknown_as_false: bool = True,
+    ) -> bool:
+        """Helper to get a standard boolean verdict, treating UNKNOWN as false by default."""
+        res = self.evaluate(context)
+        if res == TriState.TRUE:
+            return True
+        if res == TriState.FALSE:
+            return False
+        return not unknown_as_false
 
 
 class VariableUpdate(BaseModel):

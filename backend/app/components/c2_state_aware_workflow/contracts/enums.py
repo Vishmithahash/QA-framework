@@ -5,6 +5,7 @@ predicate operators, mutation categories, and evidence presence types.
 """
 
 from enum import Enum
+from typing import Any
 
 
 class LifecycleStatus(str, Enum):
@@ -42,6 +43,87 @@ class EvaluationVerdict(str, Enum):
     TEST_NOT_READY = "TEST NOT READY"
 
 
+class TriState(str, Enum):
+    """Three-valued logic state: TRUE, FALSE, and UNKNOWN.
+
+    Follows Kleene's three-valued logic:
+    - FALSE AND UNKNOWN -> FALSE
+    - TRUE AND UNKNOWN -> UNKNOWN
+    - TRUE OR UNKNOWN -> TRUE
+    - FALSE OR UNKNOWN -> UNKNOWN
+    - NOT UNKNOWN -> UNKNOWN
+    """
+
+    TRUE = "TRUE"
+    FALSE = "FALSE"
+    UNKNOWN = "UNKNOWN"
+
+    def __bool__(self) -> bool:
+        if self == TriState.TRUE:
+            return True
+        if self == TriState.FALSE:
+            return False
+        raise TypeError(
+            "Cannot evaluate UNKNOWN TriState as boolean. "
+            "Explicitly check is_true(), is_false(), or is_unknown()."
+        )
+
+    @property
+    def is_true(self) -> bool:
+        return self == TriState.TRUE
+
+    @property
+    def is_false(self) -> bool:
+        return self == TriState.FALSE
+
+    @property
+    def is_unknown(self) -> bool:
+        return self == TriState.UNKNOWN
+
+    def __and__(self, other: Any) -> "TriState":
+        other_val = self._coerce(other)
+        if self == TriState.FALSE or other_val == TriState.FALSE:
+            return TriState.FALSE
+        if self == TriState.UNKNOWN or other_val == TriState.UNKNOWN:
+            return TriState.UNKNOWN
+        return TriState.TRUE
+
+    def __or__(self, other: Any) -> "TriState":
+        other_val = self._coerce(other)
+        if self == TriState.TRUE or other_val == TriState.TRUE:
+            return TriState.TRUE
+        if self == TriState.UNKNOWN or other_val == TriState.UNKNOWN:
+            return TriState.UNKNOWN
+        return TriState.FALSE
+
+    def __invert__(self) -> "TriState":
+        if self == TriState.TRUE:
+            return TriState.FALSE
+        if self == TriState.FALSE:
+            return TriState.TRUE
+        return TriState.UNKNOWN
+
+    @classmethod
+    def _coerce(cls, val: Any) -> "TriState":
+        if isinstance(val, TriState):
+            return val
+        if val is True:
+            return TriState.TRUE
+        if val is False:
+            return TriState.FALSE
+        if val == "UNKNOWN":
+            return TriState.UNKNOWN
+        raise TypeError(f"Cannot coerce value of type {type(val)} to TriState")
+
+
+class ValidationSeverity(str, Enum):
+    """Severity levels for model validation findings."""
+
+    ERROR = "ERROR"
+    WARNING = "WARNING"
+    ASSUMPTION = "ASSUMPTION"
+
+
 class ReasonCode(str, Enum):
     """Standardized reason codes explaining evaluation verdicts."""
 
@@ -73,6 +155,14 @@ class ReasonCode(str, Enum):
     MODEL_NOT_READY_MISSING_TRANSITIONS = "MODEL_NOT_READY_MISSING_TRANSITIONS"
     MODEL_NOT_READY_INVALID_GUARD = "MODEL_NOT_READY_INVALID_GUARD"
     MODEL_NOT_READY_INCOMPLETE_MODEL = "MODEL_NOT_READY_INCOMPLETE_MODEL"
+    MODEL_NOT_READY_UNAPPROVED = "MODEL_NOT_READY_UNAPPROVED"
+    MODEL_NOT_READY_STALE_VALIDATION = "MODEL_NOT_READY_STALE_VALIDATION"
+    MODEL_NOT_READY_VALIDATION_FAILED = "MODEL_NOT_READY_VALIDATION_FAILED"
+    MODEL_NOT_READY_INFEASIBLE_GUARD = "MODEL_NOT_READY_INFEASIBLE_GUARD"
+    MODEL_NOT_READY_PROTECTED_STATE_VIOLATION = (
+        "MODEL_NOT_READY_PROTECTED_STATE_VIOLATION"
+    )
+    MODEL_NOT_READY_DEAD_END = "MODEL_NOT_READY_DEAD_END"
 
     # Test readiness issues
     TEST_NOT_READY_INFEASIBLE_PATH = "TEST_NOT_READY_INFEASIBLE_PATH"

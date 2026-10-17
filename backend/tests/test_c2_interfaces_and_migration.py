@@ -97,6 +97,7 @@ class TestAlembicMigrationDefinitions:
         inspector = inspect(test_engine)
         tables = inspector.get_table_names()
         assert "c2_workflow_models" in tables
+        assert "c2_validation_reports" in tables
 
         columns = {
             col["name"]: col for col in inspector.get_columns("c2_workflow_models")
@@ -114,6 +115,42 @@ class TestAlembicMigrationDefinitions:
         assert "created_at" in columns
         assert "updated_at" in columns
         assert "review_notes" in columns
+        assert "review_basis" in columns
         assert "approved_by" in columns
 
+        val_columns = {
+            col["name"]: col for col in inspector.get_columns("c2_validation_reports")
+        }
+        assert "id" in val_columns
+        assert "project_id" in val_columns
+        assert "model_id" in val_columns
+        assert "version" in val_columns
+        assert "definition_hash" in val_columns
+        assert "validator_version" in val_columns
+        assert "is_valid" in val_columns
+        assert "has_blocking_issues" in val_columns
+        assert "report" in val_columns
+        assert "created_at" in val_columns
+
         Base.metadata.drop_all(bind=test_engine)
+
+    def test_migration_002_module_exports(self):
+        migration_file = (
+            Path(__file__).resolve().parent.parent
+            / "alembic"
+            / "versions"
+            / "002_c2_validation_reports.py"
+        )
+        assert migration_file.exists()
+        spec = importlib.util.spec_from_file_location(
+            "migration_002", str(migration_file)
+        )
+        assert spec is not None
+        assert spec.loader is not None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        assert mod.revision == "c2_002_validation"
+        assert mod.down_revision == "c2_001_initial"
+        assert hasattr(mod, "upgrade")
+        assert hasattr(mod, "downgrade")
