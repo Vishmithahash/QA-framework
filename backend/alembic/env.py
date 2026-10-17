@@ -9,6 +9,7 @@ from app.components.c2_state_aware_workflow.models import (  # noqa: F401
 )
 from app.config import get_settings
 from app.database import Base, normalize_database_url
+import app.components.c4_policy_aware_safety.persistence.models  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
