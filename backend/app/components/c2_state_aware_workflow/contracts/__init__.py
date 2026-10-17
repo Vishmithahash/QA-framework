@@ -1,0 +1,113 @@
+"""Contracts package for Component 2: State-Aware Multi-Step Workflow Testing."""
+
+from app.components.c2_state_aware_workflow.contracts.efsm import (
+    EFSMState,
+    EFSMTransition,
+    EFSMVariable,
+    EntityContinuityRule,
+    FinalOutcomeCondition,
+    ObservableEventMapping,
+    ProtectedField,
+    WorkflowInvariant,
+    WorkflowMilestone,
+    WorkflowModelDefinition,
+)
+from app.components.c2_state_aware_workflow.contracts.enums import (
+    EffectType,
+    EvaluationVerdict,
+    EvidencePresence,
+    LifecycleStatus,
+    LogicalOperator,
+    MutationType,
+    PredicateOperator,
+    ReasonCode,
+    TestCategory,
+    TestReadinessStatus,
+    TriState,
+    ValidationSeverity,
+)
+from app.components.c2_state_aware_workflow.contracts.validation import (
+    ModelReadinessInfo,
+    ValidationIssue,
+    ValidationReport,
+)
+from app.components.c2_state_aware_workflow.contracts.evaluation_result import (
+    FirstDivergenceInfo,
+    WorkflowCoverageInfo,
+    WorkflowEvaluationResult,
+    WorkflowViolation,
+)
+from app.components.c2_state_aware_workflow.contracts.generated_test import (
+    ExpectedOutcome,
+    GeneratedWorkflowTest,
+    MutationProvenance,
+    ReferencePathInfo,
+    TestReadiness,
+)
+from app.components.c2_state_aware_workflow.contracts.predicates import (
+    StateEffectSpec,
+    StructuredPredicate,
+    VariableUpdate,
+)
+from app.components.c2_state_aware_workflow.contracts.runtime_evidence import (
+    EvidenceCompletenessInfo,
+    ObservedValue,
+    RuntimeEvidenceEvent,
+    WorkflowExecutionEvidence,
+)
+from app.components.c2_state_aware_workflow.contracts.workflow_input import (
+    ObservableStateMapping,
+    SyntheticFixtureReference,
+    ToolSpecification,
+    WorkflowInput,
+    WorkflowRule,
+)
+
+__all__ = [
+    "EFSMState",
+    "EFSMTransition",
+    "EFSMVariable",
+    "EffectType",
+    "EntityContinuityRule",
+    "EvaluationVerdict",
+    "EvidenceCompletenessInfo",
+    "EvidencePresence",
+    "ExpectedOutcome",
+    "FinalOutcomeCondition",
+    "FirstDivergenceInfo",
+    "GeneratedWorkflowTest",
+    "LifecycleStatus",
+    "LogicalOperator",
+    "ModelReadinessInfo",
+    "MutationProvenance",
+    "MutationType",
+    "ObservableEventMapping",
+    "ObservableStateMapping",
+    "ObservedValue",
+    "PredicateOperator",
+    "ProtectedField",
+    "ReasonCode",
+    "ReferencePathInfo",
+    "RuntimeEvidenceEvent",
+    "StateEffectSpec",
+    "StructuredPredicate",
+    "SyntheticFixtureReference",
+    "TestCategory",
+    "TestReadiness",
+    "TestReadinessStatus",
+    "ToolSpecification",
+    "TriState",
+    "ValidationIssue",
+    "ValidationReport",
+    "ValidationSeverity",
+    "VariableUpdate",
+    "WorkflowCoverageInfo",
+    "WorkflowEvaluationResult",
+    "WorkflowExecutionEvidence",
+    "WorkflowInput",
+    "WorkflowInvariant",
+    "WorkflowMilestone",
+    "WorkflowModelDefinition",
+    "WorkflowRule",
+    "WorkflowViolation",
+]
